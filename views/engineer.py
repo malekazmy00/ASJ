@@ -84,7 +84,7 @@ def engineer_search_view():
         with col_d2:
             target_device = st.text_input("اسم الجهاز المستهدف")
     
-    comments = st.text_area("ملاحظات إضافية")
+    comments = st.text_area("ملاحظات إضافية", key="search_comments")
     
     # Pagination
     page = int(st.query_params.get("page", 1))
@@ -189,7 +189,7 @@ def engineer_dispatch_view():
         exit_type = st.selectbox("نوع الصرف", ["بيع", "إعارة (مؤقت)", "تلف"])
     with col2:
         recipient = st.text_input("اسم المستلم / الجهة")
-        comment = st.text_area("ملاحظات إضافية")
+        comment = st.text_area("ملاحظات إضافية", key="dispatch_comment")
     
     if st.button("تنفيذ عملية الصرف"):
         if item_id and recipient:
@@ -216,7 +216,7 @@ def engineer_dispatch_view():
                         f"تم صرف قطعة: {item.item_type} - {item.part_number} لـ {recipient}"
                     )
                     
-                    st.success(" تم صرف القطعة بنجاح وتسجيل الحركة.")
+                    st.success("تم صرف القطعة بنجاح وتسجيل الحركة.")
         else:
             st.warning("برجاء إدخال رقم القطعة واسم المستلم.")
     
