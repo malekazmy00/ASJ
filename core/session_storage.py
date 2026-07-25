@@ -26,6 +26,7 @@ class SessionStorage:
         self._storage_type = settings.SESSION_TYPE
         self._memory_storage: Dict[str, dict] = {}
         self._redis_client = None
+        self._rate_limit_storage: Dict[str, list] = {}
         
         if self._storage_type == "redis":
             self._init_redis()
@@ -145,6 +146,27 @@ class SessionStorage:
                 session["last_activity"] = now
                 return True
             return False
+    
+    def check_rate_limit(self, key: str, limit: int = 5, window: int = 60) -> bool:
+        """يرجع True لو لسه مسموح بمحاولة تانية، False لو تجاوز الحد المسموح خلال الفترة الزمنية"""
+        now = time.time()
+        
+        if self._storage_type == "redis" and self._redis_client:
+            redis_key = f"{settings.REDIS_PREFIX}ratelimit:{key}"
+            count = self._redis_client.incr(redis_key)
+            if count == 1:
+                self._redis_client.expire(redis_key, window)
+            return count <= limit
+        
+        with self._lock:
+            attempts = self._rate_limit_storage.get(key, [])
+            attempts = [t for t in attempts if now - t < window]
+            if len(attempts) >= limit:
+                self._rate_limit_storage[key] = attempts
+                return False
+            attempts.append(now)
+            self._rate_limit_storage[key] = attempts
+            return True
     
     def delete_session(self, session_id: str) -> bool:
         if self._storage_type == "redis" and self._redis_client:
