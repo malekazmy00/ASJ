@@ -153,9 +153,19 @@ def main():
             else:
                 worker_view()
         elif role == "engineer":
-            engineer_view()
+            tab1, tab2 = st.tabs(["الإدخال", "المهندس"])
+            with tab1:
+                worker_view()
+            with tab2:
+                engineer_view()
         elif role == "admin":
-            admin_view()
+            tab1, tab2, tab3 = st.tabs(["الإدخال", "المهندس", "الإدارة"])
+            with tab1:
+                worker_view()
+            with tab2:
+                engineer_view()
+            with tab3:
+                admin_view()
     else:
         login_screen()
 
