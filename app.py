@@ -79,36 +79,34 @@ def login_screen():
     """شاشة تسجيل الدخول"""
     render_header()
     
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown('<div class="content-card">', unsafe_allow_html=True)
-        st.markdown("### تسجيل الدخول")
-        
-        login_user = st.text_input("اسم المستخدم", key="login_user")
-        login_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
-        
-        if st.button("دخول", use_container_width=True):
-            if login_user and login_pass:
-                import hashlib
-                fingerprint = hashlib.sha256(
-                    f"{login_user}_{st.query_params.get('ua', 'Unknown')}".encode()
-                ).hexdigest()[:32]
-                
-                success, role, error = auth_service.login(
-                    username=login_user,
-                    password=login_pass,
-                    user_agent=st.query_params.get("ua", "Unknown"),
-                    device_fingerprint=fingerprint
-                )
-                
-                if success:
-                    st.rerun()
-                else:
-                    st.error(error)
+    st.markdown('<div class="content-card" style="max-width: 420px; margin: 0 auto;">', unsafe_allow_html=True)
+    st.markdown("### تسجيل الدخول")
+    
+    login_user = st.text_input("اسم المستخدم", key="login_user")
+    login_pass = st.text_input("كلمة المرور", type="password", key="login_pass")
+    
+    if st.button("دخول", use_container_width=True):
+        if login_user and login_pass:
+            import hashlib
+            fingerprint = hashlib.sha256(
+                f"{login_user}_{st.query_params.get('ua', 'Unknown')}".encode()
+            ).hexdigest()[:32]
+            
+            success, role, error = auth_service.login(
+                username=login_user,
+                password=login_pass,
+                user_agent=st.query_params.get("ua", "Unknown"),
+                device_fingerprint=fingerprint
+            )
+            
+            if success:
+                st.rerun()
             else:
-                st.warning("أدخل البيانات")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+                st.error(error)
+        else:
+            st.warning("أدخل البيانات")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def main():
     """الدالة الرئيسية للتطبيق"""
