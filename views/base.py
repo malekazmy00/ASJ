@@ -12,6 +12,12 @@ def load_css():
 def render_header():
     st.markdown("""
     <div class="app-header">
+        <div class="logo-svg">
+            <svg viewBox="0 0 100 100" width="70" height="70" xmlns="http://www.w3.org/2000/svg">
+              <path d="M 20 75 A 40 40 0 1 1 80 75" fill="none" stroke="#0A2540" stroke-width="10" stroke-linecap="round"/>
+              <path d="M 5 55 L 30 55 L 40 25 L 60 85 L 70 55 L 95 55" fill="none" stroke="#00D2FF" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+            </svg>
+        </div>
         <h1>ASJ Medical Systems Store</h1>
         <p>نظام إدارة المستودعات</p>
     </div>
