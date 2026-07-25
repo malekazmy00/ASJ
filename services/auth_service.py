@@ -5,7 +5,7 @@ from typing import Tuple, Optional
 from core.session import session_manager
 from core.security import security_service
 from core.exceptions import AuthenticationError, RateLimitError
-from repositories.base import UnitOfWork
+from core.database import UnitOfWork
 from repositories.user_repo import user_repo, UserRepository
 from core.enums import Role
 from core.config import settings
