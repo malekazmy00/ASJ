@@ -4,27 +4,29 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 
 .stApp {
-    background-color: #F1F5F9;
+    background-color: #F8FAFC;
 }
 
 .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, 
 .stMarkdown h4, .stMarkdown p, .stMarkdown div {
-    color: #1E293B;
+    color: #0A2540;
     font-family: system-ui, -apple-system, sans-serif;
 }
 
 .stButton>button {
-    background-color: #0F172A;
-    color: white;
-    font-weight: 600;
-    font-size: 14px;
-    padding: 8px 16px;
-    border-radius: 6px;
+    background-color: #00D2FF;
+    color: #0A2540;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 10px 20px;
+    border-radius: 10px;
     border: none;
+    box-shadow: 0 4px 12px rgba(0,210,255,0.2);
     transition: all 0.2s ease;
 }
 .stButton>button:hover {
-    background-color: #1E293B;
+    background-color: #0A2540;
+    color: #00D2FF;
     transform: translateY(-1px);
 }
 .stButton>button:active {
@@ -34,8 +36,8 @@ header {visibility: hidden;}
 .stTextInput>div>div>input,
 .stSelectbox>div>div>div,
 .stTextArea>div>div>textarea {
-    border-radius: 6px;
-    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    border: 2px solid #E2E8F0;
     padding: 8px 12px;
     font-size: 14px;
     background: white;
@@ -44,8 +46,8 @@ header {visibility: hidden;}
 .stTextInput>div>div>input:focus,
 .stSelectbox>div>div>div:focus,
 .stTextArea>div>div>textarea:focus {
-    border-color: #0F172A;
-    box-shadow: 0 0 0 2px rgba(15,23,42,0.1);
+    border-color: #00D2FF;
+    box-shadow: 0 0 0 2px rgba(0,210,255,0.2);
 }
 
 .main-menu {
@@ -53,7 +55,7 @@ header {visibility: hidden;}
     gap: 4px;
     background: white;
     padding: 8px;
-    border-radius: 8px;
+    border-radius: 10px;
     border: 1px solid #E2E8F0;
     margin-bottom: 20px;
     flex-wrap: wrap;
@@ -62,8 +64,8 @@ header {visibility: hidden;}
     background: transparent;
     border: none;
     padding: 8px 20px;
-    border-radius: 6px;
-    font-weight: 600;
+    border-radius: 8px;
+    font-weight: 700;
     color: #64748B;
     cursor: pointer;
     font-size: 14px;
@@ -71,11 +73,11 @@ header {visibility: hidden;}
 }
 .main-menu button:hover {
     background: #F1F5F9;
-    color: #0F172A;
+    color: #0A2540;
 }
 .main-menu button.active {
-    background: #0F172A;
-    color: white;
+    background: #00D2FF;
+    color: #0A2540;
 }
 
 .sub-tabs {
@@ -83,7 +85,7 @@ header {visibility: hidden;}
     gap: 4px;
     background: white;
     padding: 6px;
-    border-radius: 6px;
+    border-radius: 8px;
     margin-bottom: 16px;
     border: 1px solid #E2E8F0;
     flex-wrap: wrap;
@@ -92,8 +94,8 @@ header {visibility: hidden;}
     background: transparent;
     border: none;
     padding: 6px 16px;
-    border-radius: 4px;
-    font-weight: 500;
+    border-radius: 6px;
+    font-weight: 600;
     color: #64748B;
     cursor: pointer;
     font-size: 13px;
@@ -103,13 +105,13 @@ header {visibility: hidden;}
     background: #F1F5F9;
 }
 .sub-tabs button.active {
-    background: #0F172A;
-    color: white;
+    background: #00D2FF;
+    color: #0A2540;
 }
 
 .content-card {
     background: white;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 20px;
     border: 1px solid #E2E8F0;
     margin-bottom: 16px;
@@ -118,14 +120,14 @@ header {visibility: hidden;}
 .stat-box {
     background: white;
     border: 1px solid #E2E8F0;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 12px 16px;
     text-align: center;
 }
 .stat-box .number {
-    font-size: 24px;
-    font-weight: 700;
-    color: #0F172A;
+    font-size: 26px;
+    font-weight: 800;
+    color: #0A2540;
 }
 .stat-box .label {
     font-size: 13px;
@@ -134,15 +136,19 @@ header {visibility: hidden;}
 
 .app-header {
     text-align: center;
-    padding: 16px 0;
+    padding: 20px 0 16px 0;
     background: white;
-    border-bottom: 1px solid #E2E8F0;
+    border-bottom: 3px solid #00D2FF;
     margin-bottom: 20px;
 }
+.app-header .logo-svg {
+    margin-bottom: 6px;
+}
 .app-header h1 {
-    font-size: 20px;
-    font-weight: 700;
-    color: #0F172A;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #0A2540;
     margin: 0;
 }
 .app-header p {
@@ -157,16 +163,17 @@ header {visibility: hidden;}
     gap: 12px;
     padding: 8px 12px;
     background: #F8FAFC;
-    border-radius: 6px;
+    border-radius: 8px;
     border: 1px solid #E2E8F0;
 }
 .user-info .name {
-    font-weight: 600;
-    color: #0F172A;
+    font-weight: 700;
+    color: #0A2540;
 }
 .user-info .role {
     font-size: 12px;
-    color: #64748B;
+    color: #00A8CC;
+    font-weight: 600;
 }
 .user-info .last-active {
     font-size: 11px;
@@ -175,7 +182,7 @@ header {visibility: hidden;}
 }
 
 .stAlert {
-    border-radius: 6px;
+    border-radius: 8px;
     border: none;
 }
 
