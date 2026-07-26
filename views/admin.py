@@ -81,10 +81,71 @@ def admin_users_view():
                             # إنشاء جديد
                             repo.create_user(
                                 username=new_user,
+def admin_users_view():
+    """عرض إدارة المستخدمين"""
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
+    st.markdown("### إدارة المستخدمين")
+    
+    with UnitOfWork() as uow:
+        repo = uow.get_repository(UserRepository)
+        users = repo.session.query(repo.model_class).all()
+        
+        if users:
+            data = []
+            for u in users:
+                data.append({
+                    "المستخدم": u.username,
+                    "الدور": u.role,
+                    "تصدير طوارئ": "نعم" if u.can_export else "لا",
+                    "تتبع كامل": "نعم" if u.can_track else "لا",
+                    "تعديل المخزن": "نعم" if u.can_edit else "لا",
+                    "الحالة": u.status,
+                    "آخر دخول": u.last_login.strftime("%Y-%m-%d %H:%M") if u.last_login else "-"
+                })
+            st.dataframe(data, use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### إضافة أو تعديل مستخدم")
+    
+    with st.form("add_user_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            new_user = st.text_input("اسم المستخدم")
+            new_pass = st.text_input("كلمة المرور", type="password")
+        with col2:
+            new_role = st.selectbox("الدور", [Role.WORKER, Role.ENGINEER, Role.ADMIN])
+            can_export = st.checkbox("منح صلاحية التصدير")
+            can_track = st.checkbox("منح صلاحية التتبع")
+            can_edit = st.checkbox("منح صلاحية تعديل بيانات القطع بالمخزن")
+            user_status = st.selectbox("حالة الحساب", ["Active", "Banned"])
+        
+        if st.form_submit_button("حفظ بيانات الحساب"):
+            if new_user and new_pass:
+                try:
+                    with UnitOfWork() as uow:
+                        repo = uow.get_repository(UserRepository)
+                        log_repo_local = uow.get_repository(LogRepository)
+                        
+                        existing = repo.get_by_username(new_user)
+                        if existing:
+                            # تحديث
+                            existing.password = security_service.hash_password(new_pass)
+                            existing.role = new_role
+                            existing.can_export = can_export
+                            existing.can_track = can_track
+                            existing.can_edit = can_edit
+                            existing.status = user_status
+                            repo.update(existing)
+                            st.success(f"تم تحديث بيانات المستخدم {new_user}")
+                        else:
+                            # إنشاء جديد
+                            repo.create_user(
+                                username=new_user,
                                 password=new_pass,
                                 role=new_role,
                                 can_export=can_export,
                                 can_track=can_track,
+                                can_edit=can_edit,
                                 status=user_status
                             )
                             st.success(f"تم إنشاء المستخدم {new_user} بنجاح")
@@ -96,12 +157,6 @@ def admin_users_view():
                             details=f"إدارة حساب: {new_user} - دور: {new_role}"
                         )
                         st.rerun()
-                except Exception as e:
-                    st.error(f"خطأ: {e}")
-            else:
-                st.warning("أدخل اسم المستخدم وكلمة المرور.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 def admin_notifications_view():
     """عرض التنبيهات والطلبات"""
