@@ -16,6 +16,7 @@ class User(Base):
     role = Column(String(20), nullable=False, default='worker')
     can_export = Column(Boolean, default=False)
     can_track = Column(Boolean, default=False)
+    can_edit = Column(Boolean, default=False)
     status = Column(String(20), default='Active')
     created_at = Column(DateTime, default=func.now())
     last_login = Column(DateTime)
