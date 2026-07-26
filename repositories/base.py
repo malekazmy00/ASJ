@@ -107,6 +107,23 @@ class BaseRepository(Generic[T]):
         model_name = self.model_class.__tablename__
         
         if model_name == "inventory_items":
+            from core.config import settings
+            
+            if settings.DATABASE_URL:
+                # PostgreSQL / Supabase: جدول inventory_fts (FTS5) خاص بـ SQLite بس وغير موجود هنا،
+                # فبنستخدم بحث ILIKE عادي على الأعمدة المهمة بدل منه
+                pattern = f"%{search_term}%"
+                query = self.session.query(self.model_class).filter(
+                    self.model_class.status == 'Available'
+                ).filter(
+                    (self.model_class.item_type.ilike(pattern)) |
+                    (self.model_class.part_number.ilike(pattern)) |
+                    (self.model_class.location.ilike(pattern))
+                )
+                total = query.count()
+                items = query.offset((page - 1) * page_size).limit(page_size).all()
+                return items, total
+            
             fts_query = self.session.execute(
                 text("""
                     SELECT rowid FROM inventory_fts 
