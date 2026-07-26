@@ -161,33 +161,55 @@ def engineer_search_view():
                     else:
                         st.warning("القطعة غير متوفرة حالياً في المخزن.")
                         
-                        # استخدام الذكاء الاصطناعي لو القطعة مش في المخزن
-                        with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
-                            brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
-                                search_term, image_base64
-                            )
-                            if insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
-                                st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
-                                st.info(f"**الماركة:** {brand}")
-                                st.info(f"**التصنيف:** {category}")
-                                if ai_part and ai_part != search_term:
-                                    st.info(f"**رقم القطعة المقترح:** {ai_part}")
-                                st.caption(f"**ملاحظات فنية:** {insight}")
-                                
-                                # حفظ في قاعدة المعرفة
-                                if ai_part:
-                                    with UnitOfWork() as uow:
-                                        from repositories.knowledge_repo import KnowledgeRepository
-                                        kb_repo = uow.get_repository(KnowledgeRepository)
-                                        kb_repo.create_or_update(
-                                            part_number=ai_part,
-                                            Brand=brand,
-                                            Category=category,
-                                            Compatible_Model=comp,
-                                            Additional_Compatibility=add,
-                                            market_value=val,
-                                            Gemini_Insights=insight
-                                        )
+                        # الخطوة 1: نتأكد الأول هل القطعة دي معروفة بالفعل في قاعدة المعرفة
+                        # قبل ما ننادي الذكاء الاصطناعي، عشان منستهلكش الباقة على نفس القطعة كذا مرة
+                        known_kb_record = None
+                        if search_term:
+                            with UnitOfWork() as uow:
+                                from repositories.knowledge_repo import KnowledgeRepository
+                                kb_repo = uow.get_repository(KnowledgeRepository)
+                                kb_record = kb_repo.get_by_part_number(search_term)
+                                if kb_record:
+                                    known_kb_record = {
+                                        "Brand": kb_record.Brand,
+                                        "Category": kb_record.Category,
+                                        "Compatible_Model": kb_record.Compatible_Model,
+                                        "Gemini_Insights": kb_record.Gemini_Insights
+                                    }
+                        
+                        if known_kb_record:
+                            st.markdown("### معلومات فنية (من قاعدة المعرفة المحفوظة)")
+                            st.info(f"**الماركة:** {known_kb_record['Brand']}")
+                            st.info(f"**التصنيف:** {known_kb_record['Category']}")
+                            st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
+                        else:
+                            # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
+                            with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
+                                brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
+                                    search_term, image_base64
+                                )
+                                if insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
+                                    st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
+                                    st.info(f"**الماركة:** {brand}")
+                                    st.info(f"**التصنيف:** {category}")
+                                    if ai_part and ai_part != search_term:
+                                        st.info(f"**رقم القطعة المقترح:** {ai_part}")
+                                    st.caption(f"**ملاحظات فنية:** {insight}")
+                                    
+                                    # حفظ في قاعدة المعرفة لأول مرة عشان مرات البحث الجاية تلاقيها جاهزة
+                                    if ai_part:
+                                        with UnitOfWork() as uow:
+                                            from repositories.knowledge_repo import KnowledgeRepository
+                                            kb_repo = uow.get_repository(KnowledgeRepository)
+                                            kb_repo.create_or_update(
+                                                part_number=ai_part,
+                                                Brand=brand,
+                                                Category=category,
+                                                Compatible_Model=comp,
+                                                Additional_Compatibility=add,
+                                                market_value=val,
+                                                Gemini_Insights=insight
+                                            )
         else:
             st.warning("أدخل كلمة للبحث أو ارفع صورة")
     
