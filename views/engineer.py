@@ -11,16 +11,31 @@ from views.base import render_pagination, render_stat_box
 from services.ocr_service import ocr_service
 from services.ai_service import ai_service
 from services.notification_service import notification_service
+from repositories.user_repo import UserRepository
 
 def engineer_view():
     """عرض المهندس الرئيسي"""
-    tab1, tab2, tab3 = st.tabs(["بحث", "صرف", "سجل"])
-    with tab1:
+    from core.enums import Role
+    username = session_manager.get_username()
+    with UnitOfWork() as uow:
+        repo = uow.get_repository(UserRepository)
+        user = repo.get_by_username(username)
+        can_edit_inventory = user and (user.role == Role.ADMIN or user.can_edit)
+    
+    labels = ["بحث", "صرف", "سجل"]
+    if can_edit_inventory:
+        labels.append("تعديل")
+    
+    tabs = st.tabs(labels)
+    with tabs[0]:
         engineer_search_view()
-    with tab2:
+    with tabs[1]:
         engineer_dispatch_view()
-    with tab3:
+    with tabs[2]:
         engineer_log_view()
+    if can_edit_inventory:
+        with tabs[3]:
+            engineer_edit_view()
 
 def engineer_search_view():
     """عرض البحث المتقدم"""
@@ -257,6 +272,81 @@ def engineer_log_view():
         st.dataframe(data, use_container_width=True)
     else:
         st.info("لا توجد سجلات لعرضها.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def engineer_edit_view():
+    """عرض تعديل بيانات قطعة موجودة بالمخزن - للمدير أو المهندس المصرح له فقط"""
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
+    st.markdown("### تعديل بيانات قطعة بالمخزن")
+    
+    item_id = st.number_input("رقم القطعة (ID) المراد تعديلها", min_value=1, step=1, key="edit_item_id")
+    
+    if st.button("بحث عن القطعة"):
+        with UnitOfWork() as uow:
+            repo = uow.get_repository(ItemRepository)
+            item = repo.get(item_id)
+            if item:
+                st.session_state.edit_loaded_item = {
+                    "item_id": item.item_id,
+                    "item_type": item.item_type,
+                    "part_number": item.part_number,
+                    "location": item.location,
+                    "condition": item.condition,
+                    "status": item.status
+                }
+            else:
+                st.session_state.edit_loaded_item = None
+                st.error("لا توجد قطعة بهذا الرقم.")
+    
+    loaded = st.session_state.get("edit_loaded_item")
+    if loaded and loaded["item_id"] == item_id:
+        st.markdown("---")
+        st.info(f"جاري تعديل القطعة رقم {loaded['item_id']}")
+        
+        new_type = st.text_input("نوع القطعة", value=loaded["item_type"] or "")
+        new_part_number = st.text_input("رقم القطعة (Part Number)", value=loaded["part_number"] or "")
+        new_location = st.text_input("الموقع (الرف)", value=loaded["location"] or "")
+        new_condition = st.selectbox(
+            "الحالة",
+            ["جديدة", "مستعملة"],
+            index=0 if loaded["condition"] == "جديدة" else 1
+        )
+        new_status = st.selectbox(
+            "حالة المخزون",
+            [ItemStatus.AVAILABLE, ItemStatus.OUT],
+            index=0 if loaded["status"] == ItemStatus.AVAILABLE else 1
+        )
+        
+        if st.button("حفظ التعديلات", use_container_width=True):
+            with UnitOfWork() as uow:
+                repo = uow.get_repository(ItemRepository)
+                log_repo_local = uow.get_repository(LogRepository)
+                
+                item = repo.get(loaded["item_id"])
+                if item:
+                    old_summary = f"{item.item_type} - {item.part_number} - {item.location} - {item.condition} - {item.status}"
+                    repo.update(
+                        item,
+                        item_type=new_type,
+                        part_number=new_part_number,
+                        location=new_location,
+                        condition=new_condition,
+                        status=new_status
+                    )
+                    new_summary = f"{new_type} - {new_part_number} - {new_location} - {new_condition} - {new_status}"
+                    
+                    log_repo_local.log_action(
+                        item_id=item.item_id,
+                        action_type=ActionType.UPDATE,
+                        username=session_manager.get_username(),
+                        details=f"تعديل القطعة رقم {item.item_id}: من ({old_summary}) إلى ({new_summary})"
+                    )
+                    st.success("تم حفظ التعديلات بنجاح.")
+                    st.session_state.edit_loaded_item = None
+                    st.rerun()
+                else:
+                    st.error("تعذر العثور على القطعة، ربما تم حذفها.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
