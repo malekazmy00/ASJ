@@ -33,6 +33,8 @@ class UserRepository(BaseRepository):
             return user.can_export
         elif permission == "track":
             return user.can_track
+        elif permission == "edit":
+            return user.can_edit
         
         return False
     
@@ -53,7 +55,7 @@ class UserRepository(BaseRepository):
             self.session.flush()
     
     def create_user(self, username: str, password: str, role: str = Role.WORKER,
-                   can_export: bool = False, can_track: bool = False, status: str = "Active") -> User:
+                   can_export: bool = False, can_track: bool = False, can_edit: bool = False, status: str = "Active") -> User:
         hashed = security_service.hash_password(password)
         user = User(
             username=username,
@@ -61,6 +63,7 @@ class UserRepository(BaseRepository):
             role=role,
             can_export=can_export,
             can_track=can_track,
+            can_edit=can_edit,
             status=status
         )
         self.session.add(user)
