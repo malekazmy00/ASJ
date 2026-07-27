@@ -58,6 +58,7 @@ def engineer_search_view():
     
     image_base64 = None
     extracted_part = None
+    ocr_text = None
     
     if search_image:
         image_bytes = search_image.getvalue()
@@ -184,9 +185,16 @@ def engineer_search_view():
                             st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
                         else:
                             # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
+                            # نجهز المدخل: لو عندنا رقم واسم/نص مختلفين عن بعض من نفس الصورة، نبعتهم الاتنين مع بعض
+                            ai_input = search_term
+                            if extracted_part and ocr_text and ocr_text.strip() and extracted_part not in ocr_text:
+                                ai_input = f"رقم محتمل: {extracted_part} | نص إضافي مستخرج من الصورة: {ocr_text.strip()[:200]}"
+                            elif not extracted_part and ocr_text and ocr_text.strip() and ocr_text.strip() != search_term:
+                                ai_input = f"نص مستخرج من الصورة (قد يكون اسم/وصف القطعة، لا يوجد رقم واضح): {ocr_text.strip()[:200]}"
+                            
                             with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
                                 brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
-                                    search_term, image_base64
+                                    ai_input, image_base64
                                 )
                                 if insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
                                     st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
