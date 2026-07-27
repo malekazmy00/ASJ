@@ -44,7 +44,7 @@ class InventoryItem(Base):
         Index('idx_inventory_item_type', 'item_type'),
     )
 
-class KnowledgeBase(Base)class KnowledgeBase(Base):
+class KnowledgeBase(Base):
     __tablename__ = 'specs_knowledge_base'
     
     Part_Number = Column(String(100), primary_key=True)
