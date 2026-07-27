@@ -59,20 +59,12 @@ def engineer_search_view():
     image_base64 = None
     extracted_part = None
     ocr_text = None
+    image_bytes_for_fallback = None
     
     if search_image:
-        image_bytes = search_image.getvalue()
-        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        image_bytes_for_fallback = search_image.getvalue()
+        image_base64 = base64.b64encode(image_bytes_for_fallback).decode('utf-8')
         st.image(search_image, width=120)
-        
-        ocr_text, part_number = ocr_service.extract_text(image_bytes)
-        if ocr_text and "خطأ" not in ocr_text:
-            st.info(f"النص المستخرج: {ocr_text[:100]}...")
-            if part_number:
-                extracted_part = part_number
-                st.success(f"رقم القطعة: {part_number}")
-                if not search_term:
-                    search_term = part_number
     
     # تفاصيل الطلب
     query_reason = st.selectbox("سبب الاستعلام", [
@@ -185,18 +177,26 @@ def engineer_search_view():
                             st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
                         else:
                             # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
-                            # نجهز المدخل: لو عندنا رقم واسم/نص مختلفين عن بعض من نفس الصورة، نبعتهم الاتنين مع بعض
-                            ai_input = search_term
-                            if extracted_part and ocr_text and ocr_text.strip() and extracted_part not in ocr_text:
-                                ai_input = f"رقم محتمل: {extracted_part} | نص إضافي مستخرج من الصورة: {ocr_text.strip()[:200]}"
-                            elif not extracted_part and ocr_text and ocr_text.strip() and ocr_text.strip() != search_term:
-                                ai_input = f"نص مستخرج من الصورة (قد يكون اسم/وصف القطعة، لا يوجد رقم واضح): {ocr_text.strip()[:200]}"
+                            # الذكاء الاصطناعي بيقرأ الصورة مباشرة (أدق بكتير من الـ OCR المحلي)
+                            ai_input = search_term if search_term else "غير معروف - يرجى التعرف على القطعة من الصورة المرفقة مباشرة"
                             
                             with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
                                 brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
                                     ai_input, image_base64
                                 )
-                                if insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
+                                
+                                if insight == "Pending_AI_Quota" and image_bytes_for_fallback:
+                                    # احتياطي: باقة الذكاء الاصطناعي خلصت بالكامل -> نستخدم الـ OCR المحلي كحل بديل تقريبي
+                                    st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
+                                    fallback_text, fallback_part = ocr_service.extract_text(image_bytes_for_fallback)
+                                    if fallback_text and "خطأ" not in fallback_text:
+                                        st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
+                                        if fallback_part:
+                                            st.info(f"رقم قطعة محتمل (غير مؤكد): {fallback_part}")
+                                        st.caption("هذه النتيجة تقريبية فقط ولم تُحفظ في قاعدة المعرفة، وستتم مراجعتها تلقائياً عند تجدد الباقة.")
+                                    else:
+                                        st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
+                                elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
                                     st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
                                     st.info(f"**الماركة:** {brand}")
                                     st.info(f"**التصنيف:** {category}")
