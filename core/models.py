@@ -44,15 +44,15 @@ class InventoryItem(Base):
         Index('idx_inventory_item_type', 'item_type'),
     )
 
-class KnowledgeBase(Base):
+class KnowledgeBase(Base)class KnowledgeBase(Base):
     __tablename__ = 'specs_knowledge_base'
     
     Part_Number = Column(String(100), primary_key=True)
-    Brand = Column(String(100))
-    Category = Column(String(100))
-    Compatible_Model = Column(String(255))
-    Additional_Compatibility = Column(String(255))
-    market_value = Column(String(50))
+    Brand = Column(Text)
+    Category = Column(Text)
+    Compatible_Model = Column(Text)
+    Additional_Compatibility = Column(Text)
+    market_value = Column(Text)
     Gemini_Insights = Column(Text)
     last_updated = Column(DateTime, default=func.now(), onupdate=func.now())
 
