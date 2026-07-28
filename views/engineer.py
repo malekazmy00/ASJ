@@ -172,13 +172,18 @@ def engineer_search_view():
                                 "Brand": kb_record.Brand,
                                 "Category": kb_record.Category,
                                 "Compatible_Model": kb_record.Compatible_Model,
+                                "Additional_Compatibility": kb_record.Additional_Compatibility,
+                                "market_value": kb_record.market_value,
                                 "Gemini_Insights": kb_record.Gemini_Insights
                             }
                 
                 if known_kb_record:
                     st.markdown("### معلومات فنية (من قاعدة المعرفة المحفوظة)")
                     st.info(f"**الماركة:** {known_kb_record['Brand']}")
-                    st.info(f"**التصنيف:** {known_kb_record['Category']}")
+                    st.info(f"**اسم/نوع القطعة:** {known_kb_record['Category']}")
+                    st.info(f"**الجهاز المتوافق:** {known_kb_record['Compatible_Model'] or 'غير محدد'}")
+                    st.info(f"**توافقية إضافية:** {known_kb_record['Additional_Compatibility'] or 'لا يوجد'}")
+                    st.info(f"**القيمة السوقية التقديرية:** {known_kb_record['market_value'] or 'غير محددة'}")
                     st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
                 else:
                     # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
@@ -204,9 +209,15 @@ def engineer_search_view():
                         elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
                             st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
                             st.info(f"**الماركة:** {brand}")
-                            st.info(f"**التصنيف:** {category}")
-                            if ai_part and ai_part != search_term:
-                                st.info(f"**رقم القطعة المقترح:** {ai_part}")
+                            st.info(f"**اسم/نوع القطعة:** {category}")
+                            if ai_part:
+                                if search_term and ai_part != search_term:
+                                    st.info(f"**رقم القطعة المقترح (يختلف عمّا كتبته):** {ai_part}")
+                                else:
+                                    st.info(f"**رقم القطعة:** {ai_part}")
+                            st.info(f"**الجهاز المتوافق:** {comp or 'غير محدد'}")
+                            st.info(f"**توافقية إضافية:** {add or 'لا يوجد'}")
+                            st.info(f"**القيمة السوقية التقديرية:** {val or 'غير محددة'}")
                             st.caption(f"**ملاحظات فنية:** {insight}")
                             
                             # حفظ في قاعدة المعرفة لأول مرة عشان مرات البحث الجاية تلاقيها جاهزة
