@@ -129,13 +129,15 @@ def engineer_search_view():
                     details=f"بحث واستعلام عن: {search_term}"
                 )
             
-            # البحث في المخزن
+            # البحث في المخزن (بس لو فيه نص فعلي نبحث بيه)
+            found_in_inventory = False
             if search_term:
                 with UnitOfWork() as uow:
                     repo = uow.get_repository(ItemRepository)
                     items, total = repo.search_fts(search_term, page, page_size)
                     
                     if items:
+                        found_in_inventory = True
                         st.success(f"تم العثور على {total} قطعة مطابقة")
                         data = []
                         for item in items:
@@ -151,73 +153,76 @@ def engineer_search_view():
                         
                         if total > page_size:
                             render_pagination(page, (total + page_size - 1) // page_size)
-                    else:
-                        st.warning("القطعة غير متوفرة حالياً في المخزن.")
+            
+            # لو مالقيناهاش في المخزن (سواء بحثنا بنص أو بصورة بس) -> نكمل لقاعدة المعرفة ثم الذكاء الاصطناعي
+            if not found_in_inventory:
+                if search_term:
+                    st.warning("القطعة غير متوفرة حالياً في المخزن.")
+                
+                # الخطوة 1: نتأكد الأول هل القطعة دي معروفة بالفعل في قاعدة المعرفة
+                # قبل ما ننادي الذكاء الاصطناعي، عشان منستهلكش الباقة على نفس القطعة كذا مرة
+                known_kb_record = None
+                if search_term:
+                    with UnitOfWork() as uow:
+                        from repositories.knowledge_repo import KnowledgeRepository
+                        kb_repo = uow.get_repository(KnowledgeRepository)
+                        kb_record = kb_repo.get_by_part_number(search_term)
+                        if kb_record:
+                            known_kb_record = {
+                                "Brand": kb_record.Brand,
+                                "Category": kb_record.Category,
+                                "Compatible_Model": kb_record.Compatible_Model,
+                                "Gemini_Insights": kb_record.Gemini_Insights
+                            }
+                
+                if known_kb_record:
+                    st.markdown("### معلومات فنية (من قاعدة المعرفة المحفوظة)")
+                    st.info(f"**الماركة:** {known_kb_record['Brand']}")
+                    st.info(f"**التصنيف:** {known_kb_record['Category']}")
+                    st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
+                else:
+                    # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
+                    # الذكاء الاصطناعي بيقرأ الصورة مباشرة (أدق بكتير من الـ OCR المحلي)
+                    ai_input = search_term if search_term else "غير معروف - يرجى التعرف على القطعة من الصورة المرفقة مباشرة"
+                    
+                    with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
+                        brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
+                            ai_input, image_base64
+                        )
                         
-                        # الخطوة 1: نتأكد الأول هل القطعة دي معروفة بالفعل في قاعدة المعرفة
-                        # قبل ما ننادي الذكاء الاصطناعي، عشان منستهلكش الباقة على نفس القطعة كذا مرة
-                        known_kb_record = None
-                        if search_term:
-                            with UnitOfWork() as uow:
-                                from repositories.knowledge_repo import KnowledgeRepository
-                                kb_repo = uow.get_repository(KnowledgeRepository)
-                                kb_record = kb_repo.get_by_part_number(search_term)
-                                if kb_record:
-                                    known_kb_record = {
-                                        "Brand": kb_record.Brand,
-                                        "Category": kb_record.Category,
-                                        "Compatible_Model": kb_record.Compatible_Model,
-                                        "Gemini_Insights": kb_record.Gemini_Insights
-                                    }
-                        
-                        if known_kb_record:
-                            st.markdown("### معلومات فنية (من قاعدة المعرفة المحفوظة)")
-                            st.info(f"**الماركة:** {known_kb_record['Brand']}")
-                            st.info(f"**التصنيف:** {known_kb_record['Category']}")
-                            st.caption(f"**ملاحظات فنية:** {known_kb_record['Gemini_Insights']}")
-                        else:
-                            # القطعة مش معروفة قبل كده -> ننادي الذكاء الاصطناعي ونحفظها لأول مرة
-                            # الذكاء الاصطناعي بيقرأ الصورة مباشرة (أدق بكتير من الـ OCR المحلي)
-                            ai_input = search_term if search_term else "غير معروف - يرجى التعرف على القطعة من الصورة المرفقة مباشرة"
+                        if insight == "Pending_AI_Quota" and image_bytes_for_fallback:
+                            # احتياطي: باقة الذكاء الاصطناعي خلصت بالكامل -> نستخدم الـ OCR المحلي كحل بديل تقريبي
+                            st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
+                            fallback_text, fallback_part = ocr_service.extract_text(image_bytes_for_fallback)
+                            if fallback_text and "خطأ" not in fallback_text:
+                                st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
+                                if fallback_part:
+                                    st.info(f"رقم قطعة محتمل (غير مؤكد): {fallback_part}")
+                                st.caption("هذه النتيجة تقريبية فقط ولم تُحفظ في قاعدة المعرفة، وستتم مراجعتها تلقائياً عند تجدد الباقة.")
+                            else:
+                                st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
+                        elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
+                            st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
+                            st.info(f"**الماركة:** {brand}")
+                            st.info(f"**التصنيف:** {category}")
+                            if ai_part and ai_part != search_term:
+                                st.info(f"**رقم القطعة المقترح:** {ai_part}")
+                            st.caption(f"**ملاحظات فنية:** {insight}")
                             
-                            with st.spinner("جاري تحليل البيانات بالذكاء الاصطناعي..."):
-                                brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
-                                    ai_input, image_base64
-                                )
-                                
-                                if insight == "Pending_AI_Quota" and image_bytes_for_fallback:
-                                    # احتياطي: باقة الذكاء الاصطناعي خلصت بالكامل -> نستخدم الـ OCR المحلي كحل بديل تقريبي
-                                    st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
-                                    fallback_text, fallback_part = ocr_service.extract_text(image_bytes_for_fallback)
-                                    if fallback_text and "خطأ" not in fallback_text:
-                                        st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
-                                        if fallback_part:
-                                            st.info(f"رقم قطعة محتمل (غير مؤكد): {fallback_part}")
-                                        st.caption("هذه النتيجة تقريبية فقط ولم تُحفظ في قاعدة المعرفة، وستتم مراجعتها تلقائياً عند تجدد الباقة.")
-                                    else:
-                                        st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
-                                elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
-                                    st.markdown("### معلومات فنية (الذكاء الاصطناعي)")
-                                    st.info(f"**الماركة:** {brand}")
-                                    st.info(f"**التصنيف:** {category}")
-                                    if ai_part and ai_part != search_term:
-                                        st.info(f"**رقم القطعة المقترح:** {ai_part}")
-                                    st.caption(f"**ملاحظات فنية:** {insight}")
-                                    
-                                    # حفظ في قاعدة المعرفة لأول مرة عشان مرات البحث الجاية تلاقيها جاهزة
-                                    if ai_part:
-                                        with UnitOfWork() as uow:
-                                            from repositories.knowledge_repo import KnowledgeRepository
-                                            kb_repo = uow.get_repository(KnowledgeRepository)
-                                            kb_repo.create_or_update(
-                                                part_number=ai_part,
-                                                Brand=brand,
-                                                Category=category,
-                                                Compatible_Model=comp,
-                                                Additional_Compatibility=add,
-                                                market_value=val,
-                                                Gemini_Insights=insight
-                                            )
+                            # حفظ في قاعدة المعرفة لأول مرة عشان مرات البحث الجاية تلاقيها جاهزة
+                            if ai_part:
+                                with UnitOfWork() as uow:
+                                    from repositories.knowledge_repo import KnowledgeRepository
+                                    kb_repo = uow.get_repository(KnowledgeRepository)
+                                    kb_repo.create_or_update(
+                                        part_number=ai_part,
+                                        Brand=brand,
+                                        Category=category,
+                                        Compatible_Model=comp,
+                                        Additional_Compatibility=add,
+                                        market_value=val,
+                                        Gemini_Insights=insight
+                                    )
         else:
             st.warning("أدخل كلمة للبحث أو ارفع صورة")
     
