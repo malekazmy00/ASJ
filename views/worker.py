@@ -55,46 +55,71 @@ def worker_input_view():
     
     with col2:
         item_categories = ["بوردة", "أنبوبة", "كابل", "محول", "أخرى"]
-        selected_cat = st.selectbox("التصنيف", item_categories)
-    
-    image_path = None
-    ocr_text = ""
-    part_number = ""
-    
-    if uploaded_file:
-        with st.spinner("جاري معالجة الصورة..."):
-            image_bytes = uploaded_file.getvalue()
-            quality_ok, quality_msg = ocr_service.check_quality(image_bytes)
-            if quality_ok:
-                image_path = save_image(image_bytes)
-                st.image(uploaded_file, width=150)
-                
-                ocr_text, part_number = ocr_service.extract_text(image_bytes)
-                if ocr_text and "خطأ" not in ocr_text and "غير" not in ocr_text:
-                    st.success(f"النص المستخرج: {ocr_text[:100]}...")
-                    if part_number:
-                        st.info(f"رقم القطعة: {part_number}")
-                    else:
-                        st.warning("لم يتم العثور على رقم قطعة واضح")
-            else:
-                st.warning(quality_msg)
+        selected_cat = st.selectbox("التصنيف العام", item_categories)
     
     if selected_cat == "أخرى":
         item_type = st.text_input("نوع القطعة")
     else:
         item_type = selected_cat
     
-    # محاولة استخراج رقم القطعة من Gemini لو الـ OCR مجابوش
-    if not part_number and uploaded_file and image_path:
-        with st.spinner("جاري تحليل الصورة بالذكاء الاصطناعي..."):
-            image_bytes = uploaded_file.getvalue()
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
-                item_type, image_base64
-            )
-            if ai_part and ai_part != item_type:
-                part_number = ai_part
-                st.info(f"رقم القطعة من الذكاء الاصطناعي: {part_number}")
+    image_path = None
+    image_bytes = None
+    
+    if uploaded_file:
+        image_bytes = uploaded_file.getvalue()
+        quality_ok, quality_msg = ocr_service.check_quality(image_bytes)
+        if not quality_ok:
+            st.warning(quality_msg)
+        else:
+            image_path = save_image(image_bytes)
+            st.image(uploaded_file, width=150)
+            
+            # نتأكد إن نتيجة الذكاء الاصطناعي المخزنة (لو موجودة) بتاعة نفس الصورة دي، وإلا نمسحها
+            current_hash = hash(image_bytes)
+            if st.session_state.get("worker_ai_image_hash") != current_hash:
+                st.session_state.worker_ai_result = None
+                st.session_state.worker_ai_image_hash = current_hash
+            
+            if st.button("تحليل الصورة بالذكاء الاصطناعي"):
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                ai_input = item_type if item_type else "غير معروف - يرجى التعرف على القطعة من الصورة مباشرة"
+                
+                with st.spinner("جاري تحليل الصورة بالذكاء الاصطناعي..."):
+                    brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
+                        ai_input, image_base64
+                    )
+                    
+                    if insight == "Pending_AI_Quota":
+                        st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
+                        fallback_text, fallback_part = ocr_service.extract_text(image_bytes)
+                        if fallback_text and "خطأ" not in fallback_text:
+                            st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
+                            st.session_state.worker_ai_result = {
+                                "brand": "غير معروف", "category": item_type, "part_number": fallback_part or "PENDING",
+                                "compatible_model": "", "additional_compatibility": "",
+                                "market_value": "", "insight": "تم الاستخراج محلياً بسبب استنفاذ باقة الذكاء الاصطناعي - يحتاج مراجعة يدوية"
+                            }
+                        else:
+                            st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
+                    elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
+                        st.session_state.worker_ai_result = {
+                            "brand": brand, "category": category, "part_number": ai_part,
+                            "compatible_model": comp, "additional_compatibility": add,
+                            "market_value": val, "insight": insight
+                        }
+                    else:
+                        st.error(insight or "تعذر تحليل الصورة.")
+    
+    ai_result = st.session_state.get("worker_ai_result")
+    if ai_result:
+        st.markdown("#### نتائج تحليل الذكاء الاصطناعي")
+        st.info(f"**الماركة:** {ai_result['brand']}")
+        st.info(f"**اسم/نوع القطعة:** {ai_result['category']}")
+        st.info(f"**رقم القطعة:** {ai_result['part_number']}")
+        st.info(f"**الجهاز المتوافق:** {ai_result['compatible_model'] or 'غير محدد'}")
+        st.info(f"**توافقية إضافية:** {ai_result['additional_compatibility'] or 'لا يوجد'}")
+        st.info(f"**القيمة السوقية التقديرية:** {ai_result['market_value'] or 'غير محددة'}")
+        st.caption(f"**ملاحظات فنية:** {ai_result['insight']}")
     
     # الموقع
     with UnitOfWork() as uow:
@@ -118,12 +143,13 @@ def worker_input_view():
                 st.session_state.worker_session.append({
                     "id": item_id,
                     "type": item_type,
-                    "part_number": part_number or "PENDING",
+                    "part_number": (ai_result["part_number"] if ai_result else None) or "PENDING",
                     "location": loc,
                     "condition": condition,
                     "image_path": image_path,
-                    "ocr": ocr_text
+                    "ai_data": ai_result
                 })
+                st.session_state.worker_ai_result = None
                 st.success("تمت الإضافة")
                 st.rerun()
             else:
@@ -147,8 +173,8 @@ def worker_input_view():
             with cols[1]:
                 st.write(f"**{item['type']}** - {item['location']}")
                 st.caption(f"Part: {item.get('part_number', 'PENDING')}")
-                if item.get('ocr'):
-                    st.caption(f"OCR: {item['ocr'][:50]}...")
+                if item.get('ai_data'):
+                    st.caption(f"الماركة: {item['ai_data'].get('brand', '-')}")
             with cols[2]:
                 if st.button("حذف", key=f"del_{item['id']}"):
                     st.session_state.worker_session = [
@@ -170,7 +196,7 @@ def worker_input_view():
                         location=item['location'],
                         condition=item['condition'],
                         image_path=item.get('image_path', ''),
-                        ocr_text=item.get('ocr', ''),
+                        ocr_text='',
                         status=ItemStatus.AVAILABLE
                     )
                     
@@ -180,6 +206,22 @@ def worker_input_view():
                         username=username,
                         details=f"إدخال {item['type']} - {item.get('part_number', 'PENDING')}"
                     )
+                    
+                    # حفظ بيانات الذكاء الاصطناعي في قاعدة المعرفة (زي شاشة البحث بالظبط)
+                    ai_data = item.get('ai_data')
+                    part_num = item.get('part_number', '')
+                    if ai_data and part_num and part_num != "PENDING":
+                        from repositories.knowledge_repo import KnowledgeRepository
+                        kb_repo = uow.get_repository(KnowledgeRepository)
+                        kb_repo.create_or_update(
+                            part_number=part_num,
+                            Brand=ai_data.get('brand', ''),
+                            Category=ai_data.get('category', ''),
+                            Compatible_Model=ai_data.get('compatible_model', ''),
+                            Additional_Compatibility=ai_data.get('additional_compatibility', ''),
+                            market_value=ai_data.get('market_value', ''),
+                            Gemini_Insights=ai_data.get('insight', '')
+                        )
                     
                     notification_service.check_and_notify_request(
                         part_number=item.get('part_number', ''),
