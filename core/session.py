@@ -79,6 +79,7 @@ class SessionManager:
             st.session_state.session_id = session.session_id
             st.session_state.access_token = access_token
             st.session_state.refresh_token = refresh_token
+            st.query_params["sid"] = session.session_id
             
             return access_token, refresh_token
     
@@ -86,6 +87,29 @@ class SessionManager:
         session_id = st.session_state.get('session_id')
         access_token = st.session_state.get('access_token')
         refresh_token = st.session_state.get('refresh_token')
+        
+        # لو الصفحة عملت refresh حقيقي، st.session_state بيترجع فاضي تماماً
+        # نحاول نسترجع رقم الجلسة من رابط الصفحة (query params) لأنه بيفضل موجود بعد الـ refresh
+        if not session_id:
+            sid_from_url = st.query_params.get('sid')
+            if sid_from_url:
+                session_data = self._storage.get_session(sid_from_url)
+                if session_data:
+                    last_activity = session_data.get("last_activity", 0)
+                    if time.time() - last_activity <= settings.SESSION_TIMEOUT:
+                        new_access_token = security_service.generate_jwt(
+                            session_data["username"], session_data["role"], sid_from_url,
+                            session_data.get("device_fingerprint", "")
+                        )
+                        st.session_state.session_id = sid_from_url
+                        st.session_state.access_token = new_access_token
+                        session_id = sid_from_url
+                        access_token = new_access_token
+                        self._storage.update_activity(sid_from_url)
+                    else:
+                        st.query_params.pop('sid', None)
+                else:
+                    st.query_params.pop('sid', None)
         
         if not session_id or not access_token:
             return None
@@ -166,6 +190,7 @@ class SessionManager:
         st.session_state.pop('session_id', None)
         st.session_state.pop('access_token', None)
         st.session_state.pop('refresh_token', None)
+        st.query_params.pop('sid', None)
     
     def get_username(self) -> Optional[str]:
         session = self.get_session()
