@@ -48,6 +48,17 @@ def worker_input_view():
     if 'worker_session' not in st.session_state:
         st.session_state.worker_session = []
     
+    # عرض أرقام القطع اللي اتحفظت آخر مرة (عشان العامل يكتبها على القطع فعلياً)
+    if st.session_state.get("worker_last_saved_ids"):
+        st.success("تم اعتماد القطع في المخزن الرسمي بنجاح!")
+        st.markdown("#### اكتب الأرقام دي على القطع فوراً:")
+        for item_id, item_type_label in st.session_state.worker_last_saved_ids:
+            st.info(f"**رقم القطعة (ID): {item_id}** — {item_type_label}")
+        if st.button("تم، إخفاء الأرقام دي"):
+            st.session_state.worker_last_saved_ids = None
+            st.rerun()
+        st.markdown("---")
+    
     col1, col2 = st.columns([1, 1])
     
     with col1:
@@ -188,6 +199,7 @@ def worker_input_view():
                 repo = uow.get_repository(ItemRepository)
                 log_repo_local = uow.get_repository(LogRepository)
                 username = session_manager.get_username()
+                saved_ids = []
                 
                 for item in st.session_state.worker_session:
                     new_item = repo.create(
@@ -206,6 +218,7 @@ def worker_input_view():
                         username=username,
                         details=f"إدخال {item['type']} - {item.get('part_number', 'PENDING')}"
                     )
+                    saved_ids.append((new_item.item_id, item['type']))
                     
                     # حفظ بيانات الذكاء الاصطناعي في قاعدة المعرفة (زي شاشة البحث بالظبط)
                     ai_data = item.get('ai_data')
@@ -229,7 +242,7 @@ def worker_input_view():
                         location=item['location']
                     )
             
-            st.success("تم اعتماد القطع في المخزن الرسمي بنجاح!")
+            st.session_state.worker_last_saved_ids = saved_ids
             st.session_state.worker_session = []
             st.rerun()
     
