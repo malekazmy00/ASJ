@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     AI_RETRY_COUNT: int = 3
     AI_RETRY_DELAY: float = 1.0
     
+# Supabase Storage (لتخزين صور القطع بشكل دائم)
+    SUPABASE_URL: Optional[str] = Field(default=None, env="SUPABASE_URL")
+    SUPABASE_KEY: Optional[str] = Field(default=None, env="SUPABASE_KEY")
+    SUPABASE_STORAGE_BUCKET: str = "part-images"
+
     # Image Settings
     MAX_IMAGE_SIZE: Tuple[int, int] = (1024, 1024)
     IMAGE_QUALITY: int = 80
