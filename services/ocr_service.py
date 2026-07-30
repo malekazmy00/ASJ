@@ -147,8 +147,7 @@ class OCRService:
             return True, ""
         
         try:
-            from PIL import Image, ImageFilter, ImageStat
-            from io import BytesIO
+            from PIL import ImageStat
             
             Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_PIXELS
             image = Image.open(BytesIO(image_bytes))
