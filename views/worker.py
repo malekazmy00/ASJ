@@ -14,26 +14,35 @@ from services.ai_service import ai_service
 from services.notification_service import notification_service
 
 def save_image(image_bytes: bytes) -> str:
-    """حفظ الصورة مع ضغط وتحسين"""
+    """حفظ الصورة - يفضّل التخزين الدائم على Supabase Storage، ويرجع لملف محلي فقط لو Storage غير مهيأ"""
     from PIL import Image
     from core.config import settings
-    
-    # تأكيد إنشاء مجلد uploads
-    upload_dir = settings.BASE_DIR / "uploads"
-    upload_dir.mkdir(exist_ok=True)
+    from services.storage_service import storage_service
     
     filename = f"item_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{abs(hash(image_bytes)) % 10000}.jpg"
-    filepath = os.path.join(upload_dir, filename)
     
+    # ضغط وتصغير الصورة قبل الرفع في الحالتين
     img = Image.open(BytesIO(image_bytes))
     max_size = settings.MAX_IMAGE_SIZE
     img.thumbnail(max_size, Image.Resampling.LANCZOS)
-    
-    # تحويل لـ RGB لو الصورة فيها شفافية عشان نقدر نحفظها كـ JPG
     if img.mode != 'RGB':
         img = img.convert('RGB')
-        
-    img.save(filepath, settings.IMAGE_FORMAT, quality=settings.IMAGE_QUALITY, optimize=True)
+    
+    buffer = BytesIO()
+    img.save(buffer, settings.IMAGE_FORMAT, quality=settings.IMAGE_QUALITY, optimize=True)
+    compressed_bytes = buffer.getvalue()
+    
+    if storage_service.is_available():
+        url = storage_service.upload_image(compressed_bytes, filename)
+        if url:
+            return url
+    
+    # احتياطي: لو Supabase Storage مش متاح، نحفظ محلياً (ملحوظة: ده مؤقت وهيتمسح مع أي إعادة نشر)
+    upload_dir = settings.BASE_DIR / "uploads"
+    upload_dir.mkdir(exist_ok=True)
+    filepath = os.path.join(upload_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(compressed_bytes)
     return filepath
 
 def worker_view():
@@ -179,8 +188,9 @@ def worker_input_view():
         for item in st.session_state.worker_session:
             cols = st.columns([1, 4, 1])
             with cols[0]:
-                if item.get('image_path') and os.path.exists(item['image_path']):
-                    st.image(item['image_path'], width=80)
+                img_path = item.get('image_path')
+                if img_path and (img_path.startswith("http") or os.path.exists(img_path)):
+                    st.image(img_path, width=80)
             with cols[1]:
                 st.write(f"**{item['type']}** - {item['location']}")
                 st.caption(f"Part: {item.get('part_number', 'PENDING')}")
