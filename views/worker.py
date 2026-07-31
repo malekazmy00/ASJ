@@ -68,10 +68,16 @@ def worker_input_view():
             st.rerun()
         st.markdown("---")
     
+    if 'worker_uploader_key' not in st.session_state:
+        st.session_state.worker_uploader_key = 0
+    
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        uploaded_file = st.file_uploader("رفع صورة القطعة", type=['jpg', 'png', 'jpeg', 'webp'])
+        uploaded_file = st.file_uploader(
+            "رفع صورة القطعة", type=['jpg', 'png', 'jpeg', 'webp'],
+            key=f"file_uploader_{st.session_state.worker_uploader_key}"
+        )
     
     with col2:
         item_categories = ["بوردة", "أنبوبة", "كابل", "محول", "أخرى"]
@@ -135,7 +141,8 @@ def worker_input_view():
         st.markdown("#### نتائج تحليل الذكاء الاصطناعي")
         st.info(f"**الماركة:** {ai_result['brand']}")
         st.info(f"**اسم/نوع القطعة:** {ai_result['category']}")
-        st.info(f"**رقم القطعة:** {ai_result['part_number']}")
+        st.markdown("**رقم القطعة:**")
+        st.code(ai_result['part_number'], language=None)
         st.info(f"**الجهاز المتوافق:** {ai_result['compatible_model'] or 'غير محدد'}")
         st.info(f"**توافقية إضافية:** {ai_result['additional_compatibility'] or 'لا يوجد'}")
         st.info(f"**القيمة السوقية التقديرية:** {ai_result['market_value'] or 'غير محددة'}")
@@ -170,6 +177,7 @@ def worker_input_view():
                     "ai_data": ai_result
                 })
                 st.session_state.worker_ai_result = None
+                st.session_state.worker_uploader_key += 1
                 st.success("تمت الإضافة")
                 st.rerun()
             else:
@@ -205,6 +213,8 @@ def worker_input_view():
                     st.rerun()
         
         if st.button("حفظ واعتماد في المخزن", use_container_width=True):
+            pending_notifications = []
+            
             with UnitOfWork() as uow:
                 repo = uow.get_repository(ItemRepository)
                 log_repo_local = uow.get_repository(LogRepository)
@@ -246,11 +256,19 @@ def worker_input_view():
                             Gemini_Insights=ai_data.get('insight', '')
                         )
                     
-                    notification_service.check_and_notify_request(
-                        part_number=item.get('part_number', ''),
-                        category=item['type'],
-                        location=item['location']
-                    )
+                    pending_notifications.append({
+                        "part_number": item.get('part_number', ''),
+                        "category": item['type'],
+                        "location": item['location']
+                    })
+            
+            # نبعت التنبيهات بعد ما عملية الحفظ خلصت وقفلت تماماً (عشان منفتحش اتصال قاعدة بيانات جوه اتصال تاني)
+            for notif in pending_notifications:
+                notification_service.check_and_notify_request(
+                    part_number=notif["part_number"],
+                    category=notif["category"],
+                    location=notif["location"]
+                )
             
             st.session_state.worker_last_saved_ids = saved_ids
             st.session_state.worker_session = []
