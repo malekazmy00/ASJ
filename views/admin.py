@@ -14,7 +14,7 @@ from views.base import render_stat_box
 
 def admin_view():
     """عرض المدير الرئيسي"""
-    tab1, tab2, tab3, tab4 = st.tabs(["مستخدمين", "تنبيهات وطلبات", "إحصائيات", "إعدادات النظام"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["مستخدمين", "تنبيهات وطلبات", "إحصائيات", "إعدادات النظام", "استيراد قاعدة المعرفة"])
     with tab1:
         admin_users_view()
     with tab2:
@@ -23,6 +23,8 @@ def admin_view():
         admin_stats_view()
     with tab4:
         admin_settings_view()
+    with tab5:
+        admin_import_view()
 
 def admin_users_view():
     """عرض إدارة المستخدمين"""
@@ -302,6 +304,109 @@ def admin_settings_view():
                     st.error("كلمة المرور الحالية غير صحيحة.")
         else:
             st.warning("الرجاء إدخال جميع البيانات.")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def admin_import_view():
+    """استيراد قاعدة المعرفة (بيانات قطع جاهزة تم شراؤها مسبقاً) - للمدير فقط"""
+    st.markdown('<div class="content-card">', unsafe_allow_html=True)
+    st.markdown("### استيراد قاعدة المعرفة (بيانات قطع جاهزة)")
+    st.info(
+        "ارفع ملف CSV يحتوي على الأعمدة التالية بالضبط (بنفس الأسماء والحروف):\n\n"
+        "`Part_Number`, `Brand`, `Category`, `Compatible_Model`, `Additional_Compatibility`, `market_value`, `Gemini_Insights`\n\n"
+        "العمود الوحيد الإجباري هو `Part_Number` - الباقي اختياري ويُترك فارغاً لو غير متاح.\n\n"
+        "لو نفس رقم القطعة اتكرر في أكتر من صف (كل مرة لجهاز متوافق مختلف مثلاً)، "
+        "هيتم تجميعهم تلقائياً في صف واحد، ودمج كل الأجهزة المتوافقة في خانة واحدة."
+    )
+    
+    uploaded_csv = st.file_uploader("رفع ملف CSV", type=['csv'], key="kb_import_csv")
+    
+    if uploaded_csv:
+        try:
+            df = pd.read_csv(uploaded_csv)
+            st.write(f"تم العثور على **{len(df)}** صف. معاينة أول 5 صفوف:")
+            st.dataframe(df.head())
+            
+            if "Part_Number" not in df.columns:
+                st.error("العمود الإجباري `Part_Number` غير موجود في الملف.")
+            else:
+                def clean(val):
+                    if pd.isna(val):
+                        return ""
+                    return str(val).strip()
+                
+                def join_unique(series):
+                    vals = []
+                    for v in series:
+                        v = clean(v)
+                        if v and v.upper() != "N/A" and v not in vals:
+                            vals.append(v)
+                    return "; ".join(vals)
+                
+                agg_dict = {}
+                for col in ["Brand", "Category", "market_value", "Gemini_Insights"]:
+                    if col in df.columns:
+                        agg_dict[col] = "first"
+                for col in ["Compatible_Model", "Additional_Compatibility"]:
+                    if col in df.columns:
+                        agg_dict[col] = join_unique
+                
+                grouped = df.groupby("Part_Number", as_index=False).agg(agg_dict) if agg_dict else df.drop_duplicates(subset=["Part_Number"])
+                
+                dupe_count = len(df) - len(grouped)
+                if dupe_count > 0:
+                    st.warning(f"تم تجميع {dupe_count} صف مكرر لنفس أرقام القطع، النتيجة النهائية: {len(grouped)} رقم قطعة فريد.")
+                
+                if st.button("تنفيذ الاستيراد الآن", use_container_width=True):
+                    imported = 0
+                    skipped = 0
+                    total = len(grouped)
+                    batch_size = 500
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    rows = grouped.to_dict('records')
+                    
+                    for start in range(0, total, batch_size):
+                        batch = rows[start:start + batch_size]
+                        with UnitOfWork() as uow:
+                            from repositories.knowledge_repo import KnowledgeRepository
+                            kb_repo = uow.get_repository(KnowledgeRepository)
+                            
+                            for row in batch:
+                                part_number = clean(row.get("Part_Number", ""))
+                                if not part_number or part_number.lower() == "nan":
+                                    skipped += 1
+                                    continue
+                                
+                                kb_repo.create_or_update(
+                                    part_number=part_number,
+                                    Brand=clean(row.get("Brand", "")),
+                                    Category=clean(row.get("Category", "")),
+                                    Compatible_Model=clean(row.get("Compatible_Model", "")),
+                                    Additional_Compatibility=clean(row.get("Additional_Compatibility", "")),
+                                    market_value=clean(row.get("market_value", "")),
+                                    Gemini_Insights=clean(row.get("Gemini_Insights", ""))
+                                )
+                                imported += 1
+                        
+                        progress_bar.progress(min((start + batch_size) / total, 1.0))
+                        status_text.text(f"تم استيراد {imported} من {total}...")
+                    
+                    with UnitOfWork() as uow:
+                        log_repo_local = uow.get_repository(LogRepository)
+                        log_repo_local.log_action(
+                            item_id=None,
+                            action_type=ActionType.IMPORT,
+                            username=session_manager.get_username(),
+                            details=f"استيراد {imported} قطعة (بعد تجميع {len(df)} صف أصلي) إلى قاعدة المعرفة من ملف CSV"
+                        )
+                    
+                    st.success(f"تم استيراد {imported} قطعة بنجاح إلى قاعدة المعرفة.")
+                    if skipped:
+                        st.warning(f"تم تجاهل {skipped} صف لعدم وجود رقم قطعة صالح.")
+        except Exception as e:
+            st.error(f"تعذرت قراءة الملف: {e}")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
