@@ -212,9 +212,10 @@ def engineer_search_view():
                             st.info(f"**اسم/نوع القطعة:** {category}")
                             if ai_part:
                                 if search_term and ai_part != search_term:
-                                    st.info(f"**رقم القطعة المقترح (يختلف عمّا كتبته):** {ai_part}")
+                                    st.markdown("**رقم القطعة المقترح (يختلف عمّا كتبته):**")
                                 else:
-                                    st.info(f"**رقم القطعة:** {ai_part}")
+                                    st.markdown("**رقم القطعة:**")
+                                st.code(ai_part, language=None)
                             st.info(f"**الجهاز المتوافق:** {comp or 'غير محدد'}")
                             st.info(f"**توافقية إضافية:** {add or 'لا يوجد'}")
                             st.info(f"**القيمة السوقية التقديرية:** {val or 'غير محددة'}")
@@ -254,6 +255,7 @@ def engineer_dispatch_view():
     
     if st.button("تنفيذ عملية الصرف"):
         if item_id and recipient:
+            notif_message = None
             with UnitOfWork() as uow:
                 repo = uow.get_repository(ItemRepository)
                 log_repo_local = uow.get_repository(LogRepository)
@@ -273,11 +275,12 @@ def engineer_dispatch_view():
                         details=f"صرف {item.item_type} - {item.part_number} من الرف {item.location} لـ {recipient}. النوع: {exit_type}"
                     )
                     
-                    notification_service.add_notification(
-                        f"تم صرف قطعة: {item.item_type} - {item.part_number} لـ {recipient}"
-                    )
-                    
+                    notif_message = f"تم صرف قطعة: {item.item_type} - {item.part_number} لـ {recipient}"
                     st.success("تم صرف القطعة بنجاح وتسجيل الحركة.")
+            
+            # نبعت التنبيه بعد ما عملية الصرف خلصت وقفلت تماماً
+            if notif_message:
+                notification_service.add_notification(notif_message)
         else:
             st.warning("برجاء إدخال رقم القطعة واسم المستلم.")
     
