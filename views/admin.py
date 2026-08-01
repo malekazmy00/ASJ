@@ -311,12 +311,28 @@ def admin_import_view():
     """استيراد قاعدة المعرفة (بيانات قطع جاهزة تم شراؤها مسبقاً) - للمدير فقط"""
     st.markdown('<div class="content-card">', unsafe_allow_html=True)
     st.markdown("### استيراد قاعدة المعرفة (بيانات قطع جاهزة)")
+    
+    with UnitOfWork() as uow:
+        from repositories.knowledge_repo import KnowledgeRepository
+        kb_repo = uow.get_repository(KnowledgeRepository)
+        current_count = kb_repo.count()
+    
+    col_count, col_refresh = st.columns([3, 1])
+    with col_count:
+        st.metric("عدد القطع الموجودة حالياً في قاعدة المعرفة", current_count)
+    with col_refresh:
+        st.write("")
+        if st.button("تحديث العدد"):
+            st.rerun()
+    
     st.info(
         "ارفع ملف CSV يحتوي على الأعمدة التالية بالضبط (بنفس الأسماء والحروف):\n\n"
         "`Part_Number`, `Brand`, `Category`, `Compatible_Model`, `Additional_Compatibility`, `market_value`, `Gemini_Insights`\n\n"
         "العمود الوحيد الإجباري هو `Part_Number` - الباقي اختياري ويُترك فارغاً لو غير متاح.\n\n"
         "لو نفس رقم القطعة اتكرر في أكتر من صف (كل مرة لجهاز متوافق مختلف مثلاً)، "
-        "هيتم تجميعهم تلقائياً في صف واحد، ودمج كل الأجهزة المتوافقة في خانة واحدة."
+        "هيتم تجميعهم تلقائياً في صف واحد، ودمج كل الأجهزة المتوافقة في خانة واحدة.\n\n"
+        "**ملحوظة عن قطع النت:** لو الصفحة اتقفلت أو النت اتقطع في نص الاستيراد، الدفعات اللي خلصت "
+        "قبل القطع بتفضل محفوظة. تقدر ببساطة ترفع نفس الملف تاني - مش هيتكرر، هيكمل فقط اللي ناقص."
     )
     
     uploaded_csv = st.file_uploader("رفع ملف CSV", type=['csv'], key="kb_import_csv")
