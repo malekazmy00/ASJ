@@ -336,7 +336,8 @@ def admin_import_view():
         "لو نفس رقم القطعة اتكرر في أكتر من صف (كل مرة لجهاز متوافق مختلف مثلاً)، "
         "هيتم تجميعهم تلقائياً في صف واحد، ودمج كل الأجهزة المتوافقة في خانة واحدة.\n\n"
         "**ملحوظة عن قطع النت:** لو الصفحة اتقفلت أو النت اتقطع في نص الاستيراد، الدفعات اللي خلصت "
-        "قبل القطع بتفضل محفوظة. تقدر ببساطة ترفع نفس الملف تاني - مش هيتكرر، هيكمل فقط اللي ناقص."
+        "قبل القطع بتفضل محفوظة. تقدر ترفع نفس الملف تاني وتفعّل خيار (تخطي القطع الموجودة) تحت "
+        "عشان يكمل بسرعة من غير ما يعيد اللي خلص."
     )
     
     uploaded_csv = st.file_uploader("رفع ملف CSV", type=['csv'], key="kb_import_csv")
@@ -377,9 +378,14 @@ def admin_import_view():
                 if dupe_count > 0:
                     st.warning(f"تم تجميع {dupe_count} صف مكرر لنفس أرقام القطع، النتيجة النهائية: {len(grouped)} رقم قطعة فريد.")
                 
+                skip_existing = st.checkbox(
+                    "تخطي القطع الموجودة بالفعل في القاعدة (أسرع - استخدمها لو النت اتقطع في نص استيراد سابق لنفس الملف)"
+                )
+                
                 if st.button("تنفيذ الاستيراد الآن", use_container_width=True):
                     imported = 0
                     skipped = 0
+                    already_existing = 0
                     total = len(grouped)
                     batch_size = 500
                     
@@ -391,12 +397,25 @@ def admin_import_view():
                         batch = rows[start:start + batch_size]
                         with UnitOfWork() as uow:
                             from repositories.knowledge_repo import KnowledgeRepository
+                            from core.models import KnowledgeBase
                             kb_repo = uow.get_repository(KnowledgeRepository)
+                            
+                            existing_in_batch = set()
+                            if skip_existing:
+                                batch_part_numbers = [clean(row.get("Part_Number", "")) for row in batch]
+                                existing_rows = kb_repo.session.query(KnowledgeBase.Part_Number).filter(
+                                    KnowledgeBase.Part_Number.in_(batch_part_numbers)
+                                ).all()
+                                existing_in_batch = {r[0] for r in existing_rows}
                             
                             for row in batch:
                                 part_number = clean(row.get("Part_Number", ""))
                                 if not part_number or part_number.lower() == "nan":
                                     skipped += 1
+                                    continue
+                                
+                                if skip_existing and part_number in existing_in_batch:
+                                    already_existing += 1
                                     continue
                                 
                                 kb_repo.create_or_update(
@@ -411,7 +430,7 @@ def admin_import_view():
                                 imported += 1
                         
                         progress_bar.progress(min((start + batch_size) / total, 1.0))
-                        status_text.text(f"تم استيراد {imported} من {total}...")
+                        status_text.text(f"تم استيراد {imported} من {total} (تم تخطي {already_existing} موجودة بالفعل)...")
                     
                     with UnitOfWork() as uow:
                         log_repo_local = uow.get_repository(LogRepository)
@@ -419,10 +438,12 @@ def admin_import_view():
                             item_id=None,
                             action_type=ActionType.IMPORT,
                             username=session_manager.get_username(),
-                            details=f"استيراد {imported} قطعة (بعد تجميع {len(df)} صف أصلي) إلى قاعدة المعرفة من ملف CSV"
+                            details=f"استيراد {imported} قطعة (تخطي {already_existing} موجودة مسبقاً، بعد تجميع {len(df)} صف أصلي) إلى قاعدة المعرفة من ملف CSV"
                         )
                     
                     st.success(f"تم استيراد {imported} قطعة بنجاح إلى قاعدة المعرفة.")
+                    if already_existing:
+                        st.info(f"تم تخطي {already_existing} قطعة كانت موجودة بالفعل.")
                     if skipped:
                         st.warning(f"تم تجاهل {skipped} صف لعدم وجود رقم قطعة صالح.")
         except Exception as e:
