@@ -81,7 +81,7 @@ def admin_users_view():
                             existing.can_edit = can_edit
                             existing.status = user_status
                             repo.update(existing)
-                            st.success(f"تم تحديث بيانات المستخدم {new_user}")
+                            success_msg = f"تم تحديث بيانات المستخدم {new_user}"
                         else:
                             # إنشاء جديد
                             repo.create_user(
@@ -93,7 +93,7 @@ def admin_users_view():
                                 can_edit=can_edit,
                                 status=user_status
                             )
-                            st.success(f"تم إنشاء المستخدم {new_user} بنجاح")
+                            success_msg = f"تم إنشاء المستخدم {new_user} بنجاح"
                         
                         log_repo_local.log_action(
                             item_id=None,
@@ -101,7 +101,11 @@ def admin_users_view():
                             username=session_manager.get_username(),
                             details=f"إدارة حساب: {new_user} - دور: {new_role}"
                         )
-                        st.rerun()
+                    
+                    # الـ rerun لازم يحصل بعد ما الـ UnitOfWork يقفل ويعمل commit فعلي،
+                    # لأن استدعاء st.rerun() جوه الـ with بيتعامل معاه كـ exception ويعمل rollback بدل الحفظ
+                    st.success(success_msg)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"خطأ: {e}")
             else:
