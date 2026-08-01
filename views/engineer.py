@@ -368,6 +368,7 @@ def engineer_edit_view():
         )
         
         if st.button("حفظ التعديلات", use_container_width=True):
+            item_saved = False
             with UnitOfWork() as uow:
                 repo = uow.get_repository(ItemRepository)
                 log_repo_local = uow.get_repository(LogRepository)
@@ -391,13 +392,15 @@ def engineer_edit_view():
                         username=session_manager.get_username(),
                         details=f"تعديل القطعة رقم {item.item_id}: من ({old_summary}) إلى ({new_summary})"
                     )
-                    st.success("تم حفظ التعديلات بنجاح.")
-                    st.session_state.edit_loaded_item = None
-                    st.rerun()
+                    item_saved = True
                 else:
                     st.error("تعذر العثور على القطعة، ربما تم حذفها.")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+            
+            # الـ rerun لازم يحصل بعد ما الـ UnitOfWork يقفل ويعمل commit فعلي
+            if item_saved:
+                st.success("تم حفظ التعديلات بنجاح.")
+                st.session_state.edit_loaded_item = None
+                st.rerun()
 
 # استيرادات متأخرة
 from repositories.item_repo import ItemRepository
