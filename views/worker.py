@@ -110,31 +110,51 @@ def worker_input_view():
                 image_base64 = base64.b64encode(image_bytes).decode('utf-8')
                 ai_input = item_type if item_type else "غير معروف - يرجى التعرف على القطعة من الصورة مباشرة"
                 
-                with st.spinner("جاري تحليل الصورة بالذكاء الاصطناعي..."):
-                    brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
-                        ai_input, image_base64
-                    )
-                    
-                    if insight == "Pending_AI_Quota":
-                        st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
-                        fallback_text, fallback_part = ocr_service.extract_text(image_bytes)
-                        if fallback_text and "خطأ" not in fallback_text:
-                            st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
+                # محاولة سريعة ورخيصة: نجرب نقرأ رقم تقريبي محلياً الأول، ونشيك هل موجود في قاعدة المعرفة
+                # قبل ما ننادي جيمناي، عشان لو القطعة معروفة قبل كده منستهلكش من الباقة
+                found_in_kb = False
+                with st.spinner("جاري الفحص..."):
+                    quick_text, quick_part = ocr_service.extract_text(image_bytes)
+                    if quick_part:
+                        with UnitOfWork() as uow:
+                            from repositories.knowledge_repo import KnowledgeRepository
+                            kb_repo = uow.get_repository(KnowledgeRepository)
+                            kb_record = kb_repo.get_by_part_number(quick_part)
+                            if kb_record:
+                                found_in_kb = True
+                                st.info(f"القطعة موجودة بالفعل في قاعدة المعرفة (رقم {quick_part}) - لم يتم استدعاء الذكاء الاصطناعي.")
+                                st.session_state.worker_ai_result = {
+                                    "brand": kb_record.Brand, "category": kb_record.Category, "part_number": quick_part,
+                                    "compatible_model": kb_record.Compatible_Model, "additional_compatibility": kb_record.Additional_Compatibility,
+                                    "market_value": kb_record.market_value, "insight": kb_record.Gemini_Insights
+                                }
+                
+                if not found_in_kb:
+                    with st.spinner("جاري تحليل الصورة بالذكاء الاصطناعي..."):
+                        brand, category, ai_part, comp, add, val, insight = ai_service.analyze_part(
+                            ai_input, image_base64
+                        )
+                        
+                        if insight == "Pending_AI_Quota":
+                            st.warning("باقة الذكاء الاصطناعي مستنفذة حالياً. جاري محاولة استخراج تقريبي محلياً (أقل دقة)...")
+                            fallback_text, fallback_part = ocr_service.extract_text(image_bytes)
+                            if fallback_text and "خطأ" not in fallback_text:
+                                st.info(f"نص تقريبي مستخرج محلياً: {fallback_text[:150]}")
+                                st.session_state.worker_ai_result = {
+                                    "brand": "غير معروف", "category": item_type, "part_number": fallback_part or "PENDING",
+                                    "compatible_model": "", "additional_compatibility": "",
+                                    "market_value": "", "insight": "تم الاستخراج محلياً بسبب استنفاذ باقة الذكاء الاصطناعي - يحتاج مراجعة يدوية"
+                                }
+                            else:
+                                st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
+                        elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
                             st.session_state.worker_ai_result = {
-                                "brand": "غير معروف", "category": item_type, "part_number": fallback_part or "PENDING",
-                                "compatible_model": "", "additional_compatibility": "",
-                                "market_value": "", "insight": "تم الاستخراج محلياً بسبب استنفاذ باقة الذكاء الاصطناعي - يحتاج مراجعة يدوية"
+                                "brand": brand, "category": category, "part_number": ai_part,
+                                "compatible_model": comp, "additional_compatibility": add,
+                                "market_value": val, "insight": insight
                             }
                         else:
-                            st.error("تعذر استخراج أي نص من الصورة محلياً أيضاً.")
-                    elif insight and not insight.startswith(("خطأ", "Pending", "تحذير")):
-                        st.session_state.worker_ai_result = {
-                            "brand": brand, "category": category, "part_number": ai_part,
-                            "compatible_model": comp, "additional_compatibility": add,
-                            "market_value": val, "insight": insight
-                        }
-                    else:
-                        st.error(insight or "تعذر تحليل الصورة.")
+                            st.error(insight or "تعذر تحليل الصورة.")
     
     ai_result = st.session_state.get("worker_ai_result")
     if ai_result:
@@ -160,7 +180,7 @@ def worker_input_view():
     chosen_loc = st.selectbox("الموقع", loc_options)
     loc = st.text_input("كود الرف", value=chosen_loc if chosen_loc != "إضافة جديد" else "")
     
-    condition = st.selectbox("الحالة", ["جديدة", "مستعملة"])
+    condition = st.selectbox("الحالة", ["جديدة", "مستعملة"], key="worker_condition_select")
     
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
@@ -240,21 +260,29 @@ def worker_input_view():
                     )
                     saved_ids.append((new_item.item_id, item['type']))
                     
-                    # حفظ بيانات الذكاء الاصطناعي في قاعدة المعرفة (زي شاشة البحث بالظبط)
+                    # حفظ بيانات الذكاء الاصطناعي في قاعدة المعرفة (زي شاشة البحث بالظبط - منلمسش بيانات ميدانية موجودة)
                     ai_data = item.get('ai_data')
                     part_num = item.get('part_number', '')
                     if ai_data and part_num and part_num != "PENDING":
                         from repositories.knowledge_repo import KnowledgeRepository
                         kb_repo = uow.get_repository(KnowledgeRepository)
-                        kb_repo.create_or_update(
-                            part_number=part_num,
-                            Brand=ai_data.get('brand', ''),
-                            Category=ai_data.get('category', ''),
-                            Compatible_Model=ai_data.get('compatible_model', ''),
-                            Additional_Compatibility=ai_data.get('additional_compatibility', ''),
-                            market_value=ai_data.get('market_value', ''),
-                            Gemini_Insights=ai_data.get('insight', '')
-                        )
+                        existing_kb = kb_repo.get_by_part_number(part_num)
+                        insight_text = ai_data.get('insight', '')
+                        
+                        if existing_kb:
+                            prev = existing_kb.Gemini_Insights or ""
+                            combined = f"{prev}\n---\n{insight_text}".strip("\n-") if (prev and insight_text not in prev) else (prev or insight_text)
+                            kb_repo.update(existing_kb, Gemini_Insights=combined)
+                        else:
+                            kb_repo.create_or_update(
+                                part_number=part_num,
+                                Brand="",
+                                Category="",
+                                Compatible_Model="",
+                                Additional_Compatibility="",
+                                market_value="",
+                                Gemini_Insights=insight_text
+                            )
                     
                     pending_notifications.append({
                         "part_number": item.get('part_number', ''),
