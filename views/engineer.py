@@ -221,20 +221,33 @@ def engineer_search_view():
                             st.info(f"**القيمة السوقية التقديرية:** {val or 'غير محددة'}")
                             st.caption(f"**ملاحظات فنية:** {insight}")
                             
-                            # حفظ في قاعدة المعرفة لأول مرة عشان مرات البحث الجاية تلاقيها جاهزة
+                            # هل القطعة دي موجودة بالفعل في قاعدة المعرفة (بيانات ميدانية موثوقة)؟
                             if ai_part:
                                 with UnitOfWork() as uow:
                                     from repositories.knowledge_repo import KnowledgeRepository
                                     kb_repo = uow.get_repository(KnowledgeRepository)
-                                    kb_repo.create_or_update(
-                                        part_number=ai_part,
-                                        Brand=brand,
-                                        Category=category,
-                                        Compatible_Model=comp,
-                                        Additional_Compatibility=add,
-                                        market_value=val,
-                                        Gemini_Insights=insight
-                                    )
+                                    existing_kb = kb_repo.get_by_part_number(ai_part)
+                                    
+                                    if existing_kb:
+                                        # القطعة معروفة بالفعل - منلمسش البيانات الميدانية الموثوقة،
+                                        # بس نضيف نتيجة هذا البحث لسجل ملاحظات الذكاء الاصطناعي
+                                        prev = existing_kb.Gemini_Insights or ""
+                                        combined = f"{prev}\n---\n{insight}".strip("\n-") if (prev and insight not in prev) else (prev or insight)
+                                        kb_repo.update(existing_kb, Gemini_Insights=combined)
+                                        st.caption("القطعة موجودة مسبقاً في قاعدة المعرفة - تم تحديث سجل ملاحظات الذكاء الاصطناعي فقط، والبيانات الميدانية المسجلة (الماركة، الجهاز المتوافق، القيمة) لم تتغير.")
+                                    else:
+                                        # قطعة جديدة تماماً - نسجل رقمها وملاحظات الذكاء الاصطناعي بس،
+                                        # ونسيب باقي البيانات فاضية لحد ما تتراجع وتتأكد ميدانياً من تبويب "تعديل"
+                                        kb_repo.create_or_update(
+                                            part_number=ai_part,
+                                            Brand="",
+                                            Category="",
+                                            Compatible_Model="",
+                                            Additional_Compatibility="",
+                                            market_value="",
+                                            Gemini_Insights=insight
+                                        )
+                                        st.caption("القطعة دي جديدة على قاعدة المعرفة - تم تسجيل ملاحظات الذكاء الاصطناعي فقط. تقدر تدخل الماركة والجهاز المتوافق والقيمة يدوياً من تبويب (تعديل) بعد التأكد الميداني.")
         else:
             st.warning("أدخل كلمة للبحث أو ارفع صورة")
     
@@ -344,8 +357,21 @@ def engineer_edit_view():
                     "condition": item.condition,
                     "status": item.status
                 }
+                
+                from repositories.knowledge_repo import KnowledgeRepository
+                kb_repo = uow.get_repository(KnowledgeRepository)
+                kb_record = kb_repo.get_by_part_number(item.part_number) if item.part_number else None
+                st.session_state.edit_loaded_kb = {
+                    "Brand": kb_record.Brand if kb_record else "",
+                    "Category": kb_record.Category if kb_record else "",
+                    "Compatible_Model": kb_record.Compatible_Model if kb_record else "",
+                    "Additional_Compatibility": kb_record.Additional_Compatibility if kb_record else "",
+                    "market_value": kb_record.market_value if kb_record else "",
+                    "Gemini_Insights": kb_record.Gemini_Insights if kb_record else ""
+                } if kb_record else None
             else:
                 st.session_state.edit_loaded_item = None
+                st.session_state.edit_loaded_kb = None
                 st.error("لا توجد قطعة بهذا الرقم.")
     
     loaded = st.session_state.get("edit_loaded_item")
@@ -401,6 +427,39 @@ def engineer_edit_view():
                 st.success("تم حفظ التعديلات بنجاح.")
                 st.session_state.edit_loaded_item = None
                 st.rerun()
+        
+        # البيانات الميدانية لقاعدة المعرفة (الماركة، الجهاز المتوافق، القيمة السوقية...) الخاصة برقم القطعة دي
+        if new_part_number:
+            st.markdown("---")
+            st.markdown("### البيانات الميدانية لقاعدة المعرفة")
+            kb_loaded = st.session_state.get("edit_loaded_kb") or {}
+            st.caption("البيانات دي بتاعة رقم القطعة نفسه (مش القطعة الفردية)، وبتفيد كل مرة يتلاقى فيها نفس الرقم تاني.")
+            
+            kb_brand = st.text_input("الماركة", value=kb_loaded.get("Brand", ""), key="kb_edit_brand")
+            kb_category = st.text_input("اسم/نوع القطعة", value=kb_loaded.get("Category", ""), key="kb_edit_category")
+            kb_compat = st.text_input("الجهاز المتوافق", value=kb_loaded.get("Compatible_Model", ""), key="kb_edit_compat")
+            kb_addcompat = st.text_input("توافقية إضافية", value=kb_loaded.get("Additional_Compatibility", ""), key="kb_edit_addcompat")
+            kb_value = st.text_input("القيمة السوقية", value=kb_loaded.get("market_value", ""), key="kb_edit_value")
+            kb_insights = st.text_area("ملاحظات فنية (سجل الذكاء الاصطناعي)", value=kb_loaded.get("Gemini_Insights", ""), key="kb_edit_insights")
+            
+            if st.button("حفظ البيانات الميدانية", use_container_width=True):
+                with UnitOfWork() as uow:
+                    from repositories.knowledge_repo import KnowledgeRepository
+                    kb_repo = uow.get_repository(KnowledgeRepository)
+                    kb_repo.create_or_update(
+                        part_number=new_part_number,
+                        Brand=kb_brand,
+                        Category=kb_category,
+                        Compatible_Model=kb_compat,
+                        Additional_Compatibility=kb_addcompat,
+                        market_value=kb_value,
+                        Gemini_Insights=kb_insights
+                    )
+                st.success("تم حفظ البيانات الميدانية بنجاح.")
+                st.session_state.edit_loaded_kb = None
+                st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # استيرادات متأخرة
 from repositories.item_repo import ItemRepository
