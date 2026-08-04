@@ -340,7 +340,39 @@ def engineer_log_view():
 def engineer_edit_view():
     """عرض تعديل بيانات قطعة موجودة بالمخزن - للمدير أو المهندس المصرح له فقط"""
     st.markdown('<div class="content-card">', unsafe_allow_html=True)
-    st.markdown("### تعديل بيانات قطعة بالمخزن")
+    st.markdown("### داشبورد المخزن - تعديل وحذف")
+    
+    filter_text = st.text_input("فلترة الجدول (بحث في النوع أو رقم القطعة أو الموقع)", key="dash_filter")
+    
+    with UnitOfWork() as uow:
+        repo = uow.get_repository(ItemRepository)
+        query = repo.session.query(InventoryItem).order_by(InventoryItem.item_id.desc())
+        if filter_text:
+            pattern = f"%{filter_text}%"
+            query = query.filter(
+                (InventoryItem.item_type.ilike(pattern)) |
+                (InventoryItem.part_number.ilike(pattern)) |
+                (InventoryItem.location.ilike(pattern))
+            )
+        all_items = query.limit(300).all()
+        
+        table_data = [{
+            "ID": it.item_id,
+            "النوع": it.item_type,
+            "رقم القطعة": it.part_number,
+            "الموقع": it.location,
+            "الحالة": it.condition,
+            "حالة المخزون": it.status
+        } for it in all_items]
+    
+    if table_data:
+        st.dataframe(table_data, use_container_width=True, height=350, hide_index=True)
+        st.caption(f"عدد الصفوف المعروضة: {len(table_data)} (آخر الإضافات أولاً، حد أقصى 300 صف)")
+    else:
+        st.info("لا توجد قطع مطابقة.")
+    
+    st.markdown("---")
+    st.markdown("### تعديل أو حذف قطعة")
     
     item_id = st.number_input("رقم القطعة (ID) المراد تعديلها", min_value=1, step=1, key="edit_item_id")
     
@@ -428,6 +460,38 @@ def engineer_edit_view():
                 st.session_state.edit_loaded_item = None
                 st.rerun()
         
+        st.markdown("---")
+        st.markdown("#### حذف القطعة نهائياً (لو اتدخلت غلط أو مكررة)")
+        confirm_delete = st.checkbox(f"أنا متأكد إني عايز أحذف القطعة رقم {loaded['item_id']} نهائياً - الإجراء ده لا يمكن التراجع عنه", key="confirm_delete_item")
+        if st.button("حذف القطعة نهائياً", use_container_width=True, type="primary"):
+            if confirm_delete:
+                deleted = False
+                with UnitOfWork() as uow:
+                    repo = uow.get_repository(ItemRepository)
+                    log_repo_local = uow.get_repository(LogRepository)
+                    
+                    item = repo.get(loaded["item_id"])
+                    if item:
+                        deleted_summary = f"{item.item_type} - {item.part_number} - {item.location}"
+                        log_repo_local.log_action(
+                            item_id=loaded["item_id"],
+                            action_type=ActionType.DELETE,
+                            username=session_manager.get_username(),
+                            details=f"حذف نهائي للقطعة رقم {loaded['item_id']}: ({deleted_summary})"
+                        )
+                        repo.delete(item)
+                        deleted = True
+                    else:
+                        st.error("تعذر العثور على القطعة، ربما اتحذفت بالفعل.")
+                
+                if deleted:
+                    st.success("تم حذف القطعة نهائياً من المخزن.")
+                    st.session_state.edit_loaded_item = None
+                    st.session_state.edit_loaded_kb = None
+                    st.rerun()
+            else:
+                st.warning("لازم تحدد مربع التأكيد الأول قبل الحذف.")
+        
         # البيانات الميدانية لقاعدة المعرفة (الماركة، الجهاز المتوافق، القيمة السوقية...) الخاصة برقم القطعة دي
         if new_part_number:
             st.markdown("---")
@@ -464,3 +528,4 @@ def engineer_edit_view():
 # استيرادات متأخرة
 from repositories.item_repo import ItemRepository
 from repositories.log_repo import LogRepository
+from core.models import InventoryItem
