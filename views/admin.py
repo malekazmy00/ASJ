@@ -56,7 +56,7 @@ def admin_users_view():
         col1, col2 = st.columns(2)
         with col1:
             new_user = st.text_input("اسم المستخدم")
-            new_pass = st.text_input("كلمة المرور", type="password")
+            new_pass = st.text_input("كلمة المرور (اتركها فارغة عند تعديل حساب موجود للإبقاء على كلمة المرور الحالية)", type="password")
         with col2:
             new_role = st.selectbox("الدور", [Role.WORKER, Role.ENGINEER, Role.ADMIN])
             can_export = st.checkbox("منح صلاحية التصدير")
@@ -65,7 +65,7 @@ def admin_users_view():
             user_status = st.selectbox("حالة الحساب", ["Active", "Banned"])
         
         if st.form_submit_button("حفظ بيانات الحساب"):
-            if new_user and new_pass:
+            if new_user:
                 try:
                     with UnitOfWork() as uow:
                         repo = uow.get_repository(UserRepository)
@@ -73,8 +73,9 @@ def admin_users_view():
                         
                         existing = repo.get_by_username(new_user)
                         if existing:
-                            # تحديث
-                            existing.password = security_service.hash_password(new_pass)
+                            # تحديث - الباسورد يتغير بس لو المستخدم كتب واحد جديد فعلاً
+                            if new_pass:
+                                existing.password = security_service.hash_password(new_pass)
                             existing.role = new_role
                             existing.can_export = can_export
                             existing.can_track = can_track
@@ -82,8 +83,8 @@ def admin_users_view():
                             existing.status = user_status
                             repo.update(existing)
                             success_msg = f"تم تحديث بيانات المستخدم {new_user}"
-                        else:
-                            # إنشاء جديد
+                        elif new_pass:
+                            # إنشاء جديد - الباسورد إجباري هنا بس
                             repo.create_user(
                                 username=new_user,
                                 password=new_pass,
@@ -94,22 +95,27 @@ def admin_users_view():
                                 status=user_status
                             )
                             success_msg = f"تم إنشاء المستخدم {new_user} بنجاح"
+                        else:
+                            st.warning("لازم تحط كلمة مرور عند إنشاء حساب جديد.")
+                            success_msg = None
                         
-                        log_repo_local.log_action(
-                            item_id=None,
-                            action_type=ActionType.USER_MGMT,
-                            username=session_manager.get_username(),
-                            details=f"إدارة حساب: {new_user} - دور: {new_role}"
-                        )
+                        if success_msg:
+                            log_repo_local.log_action(
+                                item_id=None,
+                                action_type=ActionType.USER_MGMT,
+                                username=session_manager.get_username(),
+                                details=f"إدارة حساب: {new_user} - دور: {new_role}"
+                            )
                     
                     # الـ rerun لازم يحصل بعد ما الـ UnitOfWork يقفل ويعمل commit فعلي،
                     # لأن استدعاء st.rerun() جوه الـ with بيتعامل معاه كـ exception ويعمل rollback بدل الحفظ
-                    st.success(success_msg)
-                    st.rerun()
+                    if success_msg:
+                        st.success(success_msg)
+                        st.rerun()
                 except Exception as e:
                     st.error(f"خطأ: {e}")
             else:
-                st.warning("أدخل اسم المستخدم وكلمة المرور.")
+                st.warning("أدخل اسم المستخدم على الأقل.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -336,8 +342,7 @@ def admin_import_view():
         "لو نفس رقم القطعة اتكرر في أكتر من صف (كل مرة لجهاز متوافق مختلف مثلاً)، "
         "هيتم تجميعهم تلقائياً في صف واحد، ودمج كل الأجهزة المتوافقة في خانة واحدة.\n\n"
         "**ملحوظة عن قطع النت:** لو الصفحة اتقفلت أو النت اتقطع في نص الاستيراد، الدفعات اللي خلصت "
-        "قبل القطع بتفضل محفوظة. تقدر ترفع نفس الملف تاني وتفعّل خيار (تخطي القطع الموجودة) تحت "
-        "عشان يكمل بسرعة من غير ما يعيد اللي خلص."
+        "قبل القطع بتفضل محفوظة. تقدر ببساطة ترفع نفس الملف تاني - مش هيتكرر، هيكمل فقط اللي ناقص."
     )
     
     uploaded_csv = st.file_uploader("رفع ملف CSV", type=['csv'], key="kb_import_csv")
